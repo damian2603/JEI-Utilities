@@ -92,6 +92,7 @@ public class AdvancedIngredientGrid extends IngredientGrid {
         }
 
         for (int row = 0; row < rows; row++) {
+            List<IngredientListSlot> ingredientRow = new ArrayList<>();
             int y1 = y + (row * INGREDIENT_HEIGHT);
             for (int column = 0; column < columns; column++) {
                 int x1 = xOffset + (column * INGREDIENT_WIDTH);
@@ -99,12 +100,14 @@ public class AdvancedIngredientGrid extends IngredientGrid {
                 Rectangle stackArea = ingredientListSlot.getArea();
                 final boolean blocked = MathUtil.intersects(exclusionAreas, stackArea);
                 ingredientListSlot.setBlocked(blocked);
-                this.guiIngredientSlots.add(ingredientListSlot);
+                ingredientRow.add(ingredientListSlot);
             }
+            addRowCompat(this.guiIngredientSlots, ingredientRow);
         }
 
         if (showHistory) {
             for (int row = 0; row < useRows; row++) {
+                List<IngredientListSlot> historyRow = new ArrayList<>();
                 int y1 = y + ((row + rows) * INGREDIENT_HEIGHT);
                 for (int column = 0; column < columns; column++) {
                     int x1 = xOffset + (column * INGREDIENT_WIDTH);
@@ -112,13 +115,54 @@ public class AdvancedIngredientGrid extends IngredientGrid {
                     Rectangle stackArea = ingredientListSlot.getArea();
                     final boolean blocked = MathUtil.intersects(exclusionAreas, stackArea);
                     ingredientListSlot.setBlocked(blocked);
-                    this.guiHistoryIngredientSlots.add(ingredientListSlot);
+                    historyRow.add(ingredientListSlot);
                 }
+                addRowCompat(this.guiHistoryIngredientSlots, historyRow);
             }
             guiHistoryIngredientSlots.set(0, this.historyIngredientElements);
         }
 
         return true;
+    }
+
+    private static void addRowCompat(IngredientListBatchRenderer renderer, List<IngredientListSlot> row) {
+        // 尝试 HEI 风格：add(List<IngredientListSlot>)
+        try {
+            java.lang.reflect.Method m = renderer.getClass().getMethod("add", java.util.List.class);
+            m.invoke(renderer, row);
+            return;
+        } catch (NoSuchMethodException ignore) {
+            // 继续尝试 JEI 风格
+        } catch (Exception e) {
+            // 继续尝试 JEI 风格
+        }
+        // 尝试 JEI 风格：add(IngredientListSlot)
+        try {
+            for (IngredientListSlot slot : row) {
+                renderer.add(slot);
+            }
+            return;
+        } catch (Throwable t) {
+            // 反射调用单个 add 兜底
+            try {
+                java.lang.reflect.Method m2 = renderer.getClass().getMethod("add", IngredientListSlot.class);
+                for (IngredientListSlot slot : row) {
+                    m2.invoke(renderer, slot);
+                }
+            } catch (Exception ignored) {
+                // 最后兜底：直接写底层列表（若存在）
+                try {
+                    java.lang.reflect.Field f = renderer.getClass().getDeclaredField("guiIngredientSlots");
+                    f.setAccessible(true);
+                    Object listObj = f.get(renderer);
+                    if (listObj instanceof java.util.List) {
+                        ((java.util.List) listObj).addAll(row);
+                    }
+                } catch (Exception ignored2) {
+                    // 放弃，避免崩溃
+                }
+            }
+        }
     }
 
     @SuppressWarnings("rawtypes")

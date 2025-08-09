@@ -9,6 +9,8 @@ import com.github.vfyjxf.jeiutilities.jei.ingredient.RecipeInfo;
 import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import mezz.jei.api.recipe.IFocus;
+import mezz.jei.Internal;
+import com.github.vfyjxf.jeiutilities.JEIUtilities;
 import mezz.jei.api.recipe.IRecipeCategory;
 import mezz.jei.api.recipe.IRecipeWrapper;
 import mezz.jei.bookmarks.BookmarkList;
@@ -88,6 +90,15 @@ public class BookmarkInputHandler {
         }
 
         final int eventKey = Keyboard.getEventKey();
+        // 运行时关键对象未初始化时，忽略，避免早期事件导致 NPE
+        if (recipesGui == null || logic == null || bookmarkList == null) {
+            return;
+        }
+
+        // 运行时关键对象未初始化时，直接忽略，避免早期事件导致 NPE
+        if (recipesGui == null || logic == null) {
+            return;
+        }
 
         if (isAddBookmark(eventKey)) {
             if (JeiUtilitiesConfig.getRecordMode() == RecordMode.ENABLE && GuiContainer.isShiftKeyDown()) {
@@ -144,7 +155,9 @@ public class BookmarkInputHandler {
         if (eventButton > -1) {
             if (Mouse.getEventButtonState()) {
                 if (!clickHandled.contains(eventButton)) {
-
+                    if (leftAreaDispatcher == null) {
+                        return;
+                    }
                     if (handleBookmarkMove(eventButton)) {
                         clickHandled.add(eventButton);
                         event.setCanceled(true);
@@ -179,6 +192,10 @@ public class BookmarkInputHandler {
             return;
         }
 
+        // 关键依赖缺失时不处理按键，避免早期时序 NPE
+        if (leftAreaDispatcher == null || recipesGui == null || logic == null) {
+            return;
+        }
         event.setCanceled(handleFocusKeybindings(eventKey));
 
     }
@@ -199,6 +216,10 @@ public class BookmarkInputHandler {
     private boolean handleMouseClick(int mouseButton) {
 
         if (this.draggedElement != null) {
+            return false;
+        }
+
+        if (leftAreaDispatcher == null || recipesGui == null) {
             return false;
         }
 
@@ -248,6 +269,9 @@ public class BookmarkInputHandler {
         final boolean showUses = KeyBindings.showUses.isActiveAndMatches(eventKey);
 
         if (showRecipe || showUses) {
+            if (leftAreaDispatcher == null || recipesGui == null) {
+                return false;
+            }
             IClickedIngredient<?> clicked = leftAreaDispatcher.getIngredientUnderMouse(MouseHelper.getX(), MouseHelper.getY());
             if (clicked != null) {
 
@@ -292,6 +316,9 @@ public class BookmarkInputHandler {
 
     private boolean handleBookmarkMove(int eventButton) {
         //Pick up the bookmark to the mouse.
+        if (bookmarkIngredientGrid == null || bookmarkIngredientSlots == null || bookmarkList == null) {
+            return false;
+        }
         if (eventButton == 2 && draggedElement == null) {
             IIngredientListElement<?> elementUnderMouse = bookmarkIngredientGrid.getElementUnderMouse();
             if (elementUnderMouse != null) {
@@ -329,6 +356,9 @@ public class BookmarkInputHandler {
     }
 
     private Pair<RecipeLayout, Object> getOutputUnderMouse() {
+        if (recipesGui == null) {
+            return null;
+        }
         List<RecipeLayout> recipeLayouts = ReflectionUtils.getFieldValue(RecipesGui.class, recipesGui, "recipeLayouts");
         if (recipeLayouts != null) {
             for (RecipeLayout recipeLayout : recipeLayouts) {
@@ -372,6 +402,9 @@ public class BookmarkInputHandler {
     }
 
     private void updateRecipes() {
+        if (logic == null) {
+            return;
+        }
         try {
             ReflectionUtils.getMethod(RecipeGuiLogic.class, "updateRecipes", void.class).invoke(logic);
         } catch (IllegalAccessException | InvocationTargetException e) {
@@ -391,6 +424,9 @@ public class BookmarkInputHandler {
     private <V> void showRecipe(IFocus<V> focus) {
         focus = Focus.check(focus);
 
+        if (logic == null || recipesGui == null) {
+            return;
+        }
         if (logic.setFocus(focus)) {
             try {
                 ReflectionUtils.getMethod(RecipesGui.class, "open", void.class).invoke(recipesGui);
@@ -423,6 +459,9 @@ public class BookmarkInputHandler {
 
     @SuppressWarnings("rawtypes")
     private int getFirstItemIndex(List<IIngredientListElement> ingredientList) {
+        if (bookmarkContents == null) {
+            return 0;
+        }
         int firstItemIndex = ReflectionUtils.getFieldValue(
                 IngredientGridWithNavigation.class,
                 bookmarkContents,
@@ -436,6 +475,9 @@ public class BookmarkInputHandler {
 
     @SuppressWarnings("rawtypes")
     private void pickUpElement(@Nonnull IIngredientListElement<?> element) {
+        if (bookmarkList == null || bookmarkIngredientSlots == null) {
+            return;
+        }
         List<IIngredientListElement> ingredientList = new LinkedList<>(bookmarkList.getIngredientList());
         ingredientList.remove(element);
         int firstItemIndex = getFirstItemIndex(ingredientList);
@@ -447,6 +489,9 @@ public class BookmarkInputHandler {
      * @return The index of the slot into which the bookmark will be inserted.
      */
     private int getInsertIndex() {
+        if (bookmarkIngredientSlots == null) {
+            return -1;
+        }
         int mouseX = MouseHelper.getX();
         int mouseY = MouseHelper.getY();
         IngredientListSlot slotUnderMouse = null;
@@ -488,6 +533,10 @@ public class BookmarkInputHandler {
     }
 
     private void notifyListenersOfChange() {
+        // JEI 可能尚未完全初始化，bookmarkList 为空时直接跳过
+        if (bookmarkList == null) {
+            return;
+        }
         try {
             ReflectionUtils.getMethod(BookmarkList.class, "notifyListenersOfChange", void.class).invoke(bookmarkList);
         } catch (IllegalAccessException | InvocationTargetException e) {
@@ -496,12 +545,40 @@ public class BookmarkInputHandler {
     }
 
     public void onInputHandlerSet() {
+        if (JeiUtilitiesPlugin.jeiRuntime == null) {
+            // JEI 运行时未就绪，跳过
+            return;
+        }
+
         recipesGui = JeiUtilitiesPlugin.jeiRuntime.getRecipesGui();
         logic = ObfuscationReflectionHelper.getPrivateValue(RecipesGui.class, recipesGui, "logic");
-        bookmarkList = ObfuscationReflectionHelper.getPrivateValue(BookmarkOverlay.class, (BookmarkOverlay) JeiUtilitiesPlugin.jeiRuntime.getBookmarkOverlay(), "bookmarkList");
-        leftAreaDispatcher = ObfuscationReflectionHelper.getPrivateValue(InputHandler.class, JeiUtilitiesPlugin.inputHandler, "leftAreaDispatcher");
-        bookmarkIngredientGrid = JeiUtilitiesPlugin.bookmarkIngredientGrid;
-        bookmarkContents = JeiUtilitiesPlugin.bookmarkContents;
+
+        // 始终从 runtime 现取，减少对静态字段时序依赖
+        BookmarkOverlay overlay = (BookmarkOverlay) JeiUtilitiesPlugin.jeiRuntime.getBookmarkOverlay();
+        if (overlay != null) {
+            bookmarkList = ObfuscationReflectionHelper.getPrivateValue(BookmarkOverlay.class, overlay, "bookmarkList");
+            bookmarkContents = ObfuscationReflectionHelper.getPrivateValue(BookmarkOverlay.class, overlay, "contents");
+        }
+
+        if (bookmarkContents != null && bookmarkIngredientGrid == null) {
+            bookmarkIngredientGrid = ObfuscationReflectionHelper.getPrivateValue(
+                    IngredientGridWithNavigation.class,
+                    bookmarkContents,
+                    "ingredientGrid");
+        }
+
+        // 兜底获取 inputHandler
+        if (JeiUtilitiesPlugin.inputHandler == null) {
+            JeiUtilitiesPlugin.inputHandler = ObfuscationReflectionHelper.getPrivateValue(Internal.class, null, "inputHandler");
+        }
+        if (JeiUtilitiesPlugin.inputHandler != null) {
+            leftAreaDispatcher = ObfuscationReflectionHelper.getPrivateValue(InputHandler.class, JeiUtilitiesPlugin.inputHandler, "leftAreaDispatcher");
+        }
+
+        if (bookmarkIngredientGrid == null) {
+            JEIUtilities.logger.warn("bookmarkIngredientGrid is null; postpone BookmarkInputHandler init.");
+            return;
+        }
         bookmarkIngredientSlots = ObfuscationReflectionHelper.getPrivateValue(IngredientGrid.class, bookmarkIngredientGrid, "guiIngredientSlots");
     }
 

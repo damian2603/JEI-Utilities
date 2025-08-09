@@ -53,7 +53,8 @@ public class JeiUtilitiesPlugin implements IModPlugin {
 
     @Override
     public void onRuntimeAvailable(@Nonnull IJeiRuntime jeiRuntime) {
-        JeiUtilitiesPlugin.jeiRuntime = Internal.getRuntime();
+        // 优先使用传入的 runtime，降低对 Internal 的依赖
+        JeiUtilitiesPlugin.jeiRuntime = (jeiRuntime instanceof JeiRuntime) ? (JeiRuntime) jeiRuntime : Internal.getRuntime();
         ingredientListOverlay = (IngredientListOverlay) jeiRuntime.getIngredientListOverlay();
         if (JeiUtilitiesConfig.isEnableHistory()) {
             ObfuscationReflectionHelper.setPrivateValue(
@@ -71,6 +72,8 @@ public class JeiUtilitiesPlugin implements IModPlugin {
             bookmarkIngredientGrid = getPrivateValue(IngredientGridWithNavigation.class,
                     bookmarkContents,
                     "ingredientGrid");
+            // 在全部就绪后再初始化输入处理器，避免时序 NPE
+            com.github.vfyjxf.jeiutilities.gui.bookmark.BookmarkInputHandler.getInstance().onInputHandlerSet();
         }
     }
 
