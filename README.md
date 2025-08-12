@@ -1,4 +1,4 @@
-# JEI-Utilities
+# JEI-Utilitiesa
 More enhancements for JEI
 
 ## Credits
